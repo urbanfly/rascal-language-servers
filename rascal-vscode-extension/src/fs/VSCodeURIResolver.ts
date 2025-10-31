@@ -338,7 +338,25 @@ class ResolverClient implements VSCodeResolverServer, Disposable  {
         connectWatchHandler(connection, this);
     }
 
-
+    async readFileOrDocument(uri: vscode.Uri): Promise<Buffer> {
+        try {
+            // first try to read an already open document
+            const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
+            if (doc) {
+                return Buffer.from(doc.getText());
+            }
+            // second try to read a file; this includes VFS
+            return Buffer.from(
+                await this.fs.readFile(uri)
+            );
+        } catch (err) {
+            // third, try to read the document
+            // this could be from a filesystem provider or a text docuemnt content provider
+            const doc = await vscode.workspace.openTextDocument(uri);
+            const text = doc.getText();
+            return Buffer.from(text);
+        }
+    }
 
     async readFile(req: ISourceLocationRequest): Promise<ReadFileResult> {
         if (this.isRascalNative(req)) {
@@ -346,9 +364,8 @@ class ResolverClient implements VSCodeResolverServer, Disposable  {
         }
         return asyncCatcher(async () => <ReadFileResult>{
             errorCode: 0,
-            contents: Buffer.from(
-                await this.fs.readFile(toUri(req))
-            ).toString("base64")
+            contents: (await this.readFileOrDocument(toUri(req)))
+                .toString("base64")
         });
     }
 
